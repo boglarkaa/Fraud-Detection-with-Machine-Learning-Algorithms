@@ -1,3 +1,5 @@
+import pickle
+
 import customtkinter as tk
 from tkinter import filedialog
 
@@ -67,6 +69,12 @@ class MLApp:
         self.x = None
         self.y = None
         self.dataset = None
+
+        self.model = None
+
+        self.model_directory = "C:\\Users\\BOGI\\Desktop\\MLApp\\TrainedModels"
+        self.model_pkl = None
+
         self.root = root
         self.root.title("Machine Learning Application")
 
@@ -95,16 +103,16 @@ class MLApp:
         self.epoch_box = tk.CTkTextbox(root)
         self.epoch_box.grid(row=3, column=1, padx=10, pady=5)
         self.epoch_box.configure(height=20, width=150)
+        self.epoch_box.insert("0.0", "200")
 
         self.tpr_fig, self.tpr_ax = create_donuts("TPR", 0, 3)
         self.fpr_fig, self.fpr_ax = create_donuts("FPR", 0, 4)
         self.accuracy_fig, self.accuracy_ax = create_donuts("Accuracy", 3, 3)
         self.precision_fig, self.precision_ax = create_donuts("Precision", 3, 4)
-
         self.tnr_fig, self.tnr_ax = create_donuts("TNR", 0, 5)
         self.fnr_fig, self.fnr_ax = create_donuts("FNR", 0, 6)
-        self.fscore_fig, self.fscore_ax = create_donuts("F1-score", 3, 5)
-        self.baccuracy_fig, self.baccuracy_ax = create_donuts("Balanced Accuracy", 3, 6)
+        self.f_score_fig, self.f_score_ax = create_donuts("F1-score", 3, 5)
+        self.b_accuracy_fig, self.b_accuracy_ax = create_donuts("Balanced Accuracy", 3, 6)
 
         self.model_var = tk.StringVar(root)
         self.model_var.set(MODELS[0])
@@ -118,7 +126,12 @@ class MLApp:
             root, text="Train Model", command=self.train_model
         )
 
-        self.train_button.grid(row=4, column=0, columnspan=2, padx=10, pady=5)
+        self.load_button = tk.CTkButton(
+            root, text="Load Model", command=self.load_model
+        )
+
+        self.train_button.grid(row=4, column=0, padx=10, pady=5)
+        self.load_button.grid(row=4, column=1, padx=10, pady=5)
 
         self.fig, self.ax = plt.subplots(facecolor="#242424")
         self.ax.set_facecolor("#242424")
@@ -133,7 +146,6 @@ class MLApp:
         file_path = filedialog.askopenfilename(title="Select Dataset File")
         filename = os.path.basename(file_path)
         if filename:
-            self.dataset = pd.read_csv(file_path)
             self.dataset = pd.read_csv(file_path)
             if filename == DATASETS[0]:
                 self.update_model_dropdown(
@@ -157,38 +169,49 @@ class MLApp:
             self.transform_categorical(filename)
 
             self.x_train, self.x_test, self.y_train, self.y_test = train_test_split(
-                self.x, self.y, test_size=0.2, random_state=42
+                self.x, self.y, test_size=0.2, random_state=100
             )
 
     def update_model_dropdown(self, model_list):
         self.model_dropdown.configure(values=model_list)
 
     def train_model(self):
-        model = None
+        # model = None
         model_type = self.model_dropdown.get()
         if model_type == MODELS[0]:
-            model = AdaBoostClassifier(random_state=42)
+            self.model = AdaBoostClassifier(random_state=42)
         elif model_type == MODELS[1]:
-            model = DecisionTreeClassifier()
+            self.model = DecisionTreeClassifier()
         elif model_type == MODELS[2]:
-            model = GaussianNB()
+            self.model = GaussianNB()
         elif model_type == MODELS[3]:
-            model = KNeighborsClassifier(n_neighbors=3)
+            self.model = KNeighborsClassifier(n_neighbors=3)
         elif model_type == MODELS[4]:
-            model = LogisticRegression(solver="lbfgs", max_iter=1000)
+            self.model = LogisticRegression(solver="lbfgs", max_iter=1000)
         elif model_type == MODELS[5]:
             epochs = self.epoch_box.get("0.0", "end")
-            model = MLPClassifier(
+            self.model = MLPClassifier(
                 hidden_layer_sizes=(6, 5), random_state=5, learning_rate_init=0.01, max_iter=int(epochs)
             )
-            print(model.get_params())
         elif model_type == MODELS[6]:
-            model = RandomForestClassifier(
+            self.model = RandomForestClassifier(
                 criterion="gini", max_depth=8, min_samples_split=10, random_state=5
             )
         self.normalize(self.norm_dropdown.get())
-        model.fit(self.x_train_norm, self.y_train)
-        y_pred = model.predict(self.x_test_norm)
+        self.model.fit(self.x_train_norm, self.y_train)
+        y_pred = self.model.predict(self.x_test_norm)
+
+        self.calculate_scores(y_pred)
+
+        model_filename = model_type + "_" + self.norm_dropdown.get() + ".pkl"
+        model_pkl_file = os.path.join(self.model_directory, model_filename)
+
+        os.makedirs(self.model_directory, exist_ok=True)
+        with open(model_pkl_file, "wb") as file:
+            pickle.dump(self.model, file)
+            print("Created")
+
+    def calculate_scores(self, y_pred):
         accuracy = accuracy_score(self.y_test, y_pred)
         print("Accuracy:", accuracy)
         plot_donut_chart(accuracy * 100, self.accuracy_ax, self.accuracy_fig, "Accuracy")
@@ -214,14 +237,25 @@ class MLApp:
         print("Precision:", precision)
 
         f1 = f1_score(self.y_test, y_pred)
-        plot_donut_chart(f1 * 100, self.fscore_ax, self.fscore_fig, "F1-score")
+        plot_donut_chart(f1 * 100, self.f_score_ax, self.f_score_fig, "F1-score")
         print("F1 score:", f1)
 
         ba = balanced_accuracy_score(self.y_test, y_pred)
-        plot_donut_chart(ba * 100, self.baccuracy_ax, self.baccuracy_fig, "Balanced accuracy")
+        plot_donut_chart(ba * 100, self.b_accuracy_ax, self.b_accuracy_fig, "Balanced accuracy")
         print("Balanced accuracy:", ba)
 
-        self.plot_learning_curve(model)
+        self.plot_learning_curve(self.model)
+
+    def load_model(self):
+        model_filename = self.model_dropdown.get() + "_" + self.norm_dropdown.get() + ".pkl"
+        model_pkl_file = os.path.join(self.model_directory, model_filename)
+
+        with open(model_pkl_file, "rb") as file:
+            self.model = pickle.load(file)
+
+        y_pred = self.model.predict(self.x_test)
+
+        self.calculate_scores(y_pred)
 
     def normalize(self, choice):
         if choice == "Not Normalized":
@@ -363,4 +397,8 @@ if __name__ == "__main__":
     root = tk.CTk()
     app = MLApp(root)
 
+    for i in range(0, 6):
+        root.columnconfigure(i, weight=1)
+
     root.mainloop()
+    
